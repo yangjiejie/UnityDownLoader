@@ -3,12 +3,14 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 //多线程下载器 
 public class MultiThreadDownloader
 {
@@ -69,6 +71,13 @@ public class MultiThreadDownloader
         }
         catch (Exception ex)
         {
+            var environment =  Application.dataPath.Replace("Assets", "Environment");
+            if(!File.Exists(environment + "/log.txt"))
+            {
+                File.Create(environment + "/log.txt");
+            }
+            var time = DateTime.Now.ToString("hh:mm:ss:fff");
+            File.WriteAllText(environment + "/log.txt", $"[{time}]" + ex.ToString());
             if (File.Exists(savePath))
             {
                 File.Delete(savePath);

@@ -1,0 +1,4 @@
+[20:12:37:365]System.Net.Http.HttpRequestException: 404 (Not Found)
+  at System.Net.Http.HttpResponseMessage.EnsureSuccessStatusCode () [0x0002a] in <a9e84a8d797f4b758f038a09e13b68c2>:0 
+  at MultiThreadDownloader.GetFileSizeAsync (System.String url) [0x000a2] in E:\2024Code\UnityDownLoader\UnityDownLoader\Assets\Script\MultiThreadDownloader.cs:93 
+  at MultiThreadDownloader.DownloadFileAsync (System.String url, System.String savePath, System.Int32 maxThreads, System.IProgress`1[T] progress, System.Threading.CancellationToken cancellationToken) [0x00081] in E:\2024Code\UnityDownLoader\UnityDownLoader\Assets\Script\MultiThreadDownloader.cs:31 
