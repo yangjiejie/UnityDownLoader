@@ -10,6 +10,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Assets.Script;
 using UnityEngine;
 //多线程下载器 
 public class MultiThreadDownloader
@@ -23,28 +24,66 @@ public class MultiThreadDownloader
     }
 
     public async Task DownloadFileAsync(string url, string savePath,
-        int maxThreads = 4, IProgress<long> progress = null, CancellationToken cancellationToken = default)
+    int maxThreads = 4, IProgress<long> progress = null, CancellationToken cancellationToken = default)
     {
+        var metadataPath = savePath + ".part"; // 断点文件路径
+        DownloadMetadata metadata = null;
+
         try
         {
             // 获取文件大小
             var fileSize = await GetFileSizeAsync(url);
 
-            // 创建临时文件
-            using (var fileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None))
+            // 检查是否有断点文件
+            if (File.Exists(metadataPath))
             {
-                fileStream.SetLength(fileSize);
+                // 加载断点信息（需实现 JSON 反序列化）
+                var metadataJson = File.ReadAllText(metadataPath);
+                metadata = System.Text.Json.JsonSerializer.Deserialize<DownloadMetadata>(metadataJson);
+
+                // 校验文件是否一致（URL 和文件大小）
+                if (metadata.Url != url || metadata.FileSize != fileSize)
+                {
+                    File.Delete(metadataPath); // 文件已变更，删除旧断点
+                    metadata = null;
+                }
             }
 
-            // 计算分块
-            var chunks = CalculateChunks(fileSize, ChunkSize);
+            // 初始化或重新计算分块
+            List<ChunkProgress> chunks;
+            if (metadata == null)
+            {
+                // 新下载：创建文件并计算分块
+                using (var fileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    fileStream.SetLength(fileSize);
+                }
+                var rawChunks = CalculateChunks(fileSize, ChunkSize);
+                chunks = rawChunks.Select(c => new ChunkProgress { Start = c.Start, End = c.End, IsCompleted = false }).ToList();
+                metadata = new DownloadMetadata { Url = url, FileSize = fileSize, Chunks = chunks };
+                SaveMetadata(metadata, metadataPath); // 保存初始断点信息
+            }
+            else
+            {
+                // 断点续传：使用已有的分块信息
+                chunks = metadata.Chunks;
+            }
 
-            // 创建下载任务
+            // 筛选未完成的分块
+            var pendingChunks = chunks.Where(c => !c.IsCompleted).ToList();
+            if (!pendingChunks.Any())
+            {
+                // 所有分块已完成，直接返回
+                progress?.Report(100);
+                return;
+            }
+
+            // 创建下载任务（仅处理未完成分块）
             var downloadTasks = new List<Task>();
-            var totalBytesDownloaded = 0L;
+            var totalBytesDownloaded = chunks.Where(c => c.IsCompleted).Sum(c => c.End - c.Start + 1);
             var progressLock = new object();
 
-            foreach (var chunk in chunks)
+            foreach (var chunk in pendingChunks)
             {
                 // 限制并发线程数
                 if (downloadTasks.Count >= maxThreads)
@@ -53,32 +92,41 @@ public class MultiThreadDownloader
                     downloadTasks.RemoveAll(t => t.IsCompleted);
                 }
 
+                // 下载分块，并标记完成状态
                 var task = DownloadChunkAsync(url, savePath, chunk.Start, chunk.End,
                     bytesDownloaded =>
                     {
                         lock (progressLock)
                         {
                             totalBytesDownloaded += bytesDownloaded;
-                            progress?.Report(totalBytesDownloaded * 100 / fileSize);
+                            progress?.Report(totalBytesDownloaded * 100 / metadata.FileSize);
+                        }
+                    }, cancellationToken)
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsCompletedSuccessfully)
+                        {
+                            chunk.IsCompleted = true;
+                            SaveMetadata(metadata, metadataPath); // 实时保存分块状态
                         }
                     }, cancellationToken);
 
                 downloadTasks.Add(task);
             }
 
-            // 等待所有下载完成
+            // 等待所有分块下载完成
             await Task.WhenAll(downloadTasks);
+
+            // 下载完成：删除断点文件
+            if (File.Exists(metadataPath))
+            {
+                File.Delete(metadataPath);
+            }
         }
         catch (Exception ex)
         {
-            var environment =  Application.dataPath.Replace("Assets", "Environment");
-            if(!File.Exists(environment + "/log.txt"))
-            {
-                File.Create(environment + "/log.txt");
-            }
-            var time = DateTime.Now.ToString("hh:mm:ss:fff");
-            File.WriteAllText(environment + "/log.txt", $"[{time}]" + ex.ToString());
-            if (File.Exists(savePath))
+            // 异常时保留断点文件，仅删除不完整的目标文件（可选）
+            if (File.Exists(savePath) && (metadata == null || metadata.Chunks.Any(c => !c.IsCompleted)))
             {
                 File.Delete(savePath);
             }
@@ -86,6 +134,13 @@ public class MultiThreadDownloader
         }
     }
 
+    // 保存断点信息到本地文件（JSON 序列化）
+    private void SaveMetadata(DownloadMetadata metadata, string path)
+    {
+        
+        var json = System.Text.Json.JsonSerializer.Serialize(metadata);
+        File.WriteAllText(path, json);
+    }
     private async Task<long> GetFileSizeAsync(string url)
     {
         using (var response = await _httpClient.SendAsync(new HttpRequestMessage(HttpMethod.Head, url)))
