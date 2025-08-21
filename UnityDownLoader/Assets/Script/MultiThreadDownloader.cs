@@ -3,7 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -39,7 +39,7 @@ public class MultiThreadDownloader
             {
                 // 加载断点信息（需实现 JSON 反序列化）
                 var metadataJson = File.ReadAllText(metadataPath);
-                metadata = System.Text.Json.JsonSerializer.Deserialize<DownloadMetadata>(metadataJson);
+                metadata = JsonUtil.DeserializeObject<DownloadMetadata>(metadataJson);
 
                 // 校验文件是否一致（URL 和文件大小）
                 if (metadata.Url != url || metadata.FileSize != fileSize)
@@ -137,8 +137,8 @@ public class MultiThreadDownloader
     // 保存断点信息到本地文件（JSON 序列化）
     private void SaveMetadata(DownloadMetadata metadata, string path)
     {
-        
-        var json = System.Text.Json.JsonSerializer.Serialize(metadata);
+
+        var json = JsonUtil.SerializeObject(metadata);
         File.WriteAllText(path, json);
     }
     private async Task<long> GetFileSizeAsync(string url)

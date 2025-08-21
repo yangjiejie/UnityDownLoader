@@ -45,4 +45,21 @@ namespace Assets.Script
         }
     }
 
+
+    // 分块状态信息
+    public class ChunkProgress
+    {
+        public long Start { get; set; }
+        public long End { get; set; }
+        public bool IsCompleted { get; set; }
+    }
+
+    // 断点续传元数据（保存到本地文件）
+    public class DownloadMetadata
+    {
+        public string Url { get; set; } // 下载链接（用于校验文件是否一致）
+        public long FileSize { get; set; } // 文件总大小
+        public List<ChunkProgress> Chunks { get; set; } = new List<ChunkProgress>();
+    }
+
 }
